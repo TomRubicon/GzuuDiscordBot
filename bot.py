@@ -4,6 +4,7 @@ import random
 from datetime import datetime
 
 import discord
+from discord.ext import commands
 from dotenv import load_dotenv
 
 load_dotenv(verbose=True)
@@ -12,47 +13,56 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD = os.getenv('DISCORD_GUILD')
 
 intents = discord.Intents.all()
-client = discord.Client(intents=intents)
+bot = commands.Bot(command_prefix='!', intents=intents)
 
-@client.event
+@bot.event
 async def on_ready():
-    guild = discord.utils.get(client.guilds, name=GUILD)
+    guild = discord.utils.get(bot.guilds, name=GUILD)
     
-    print(f'{client.user} has connected to Discord in Guild: {guild.name} GID: {guild.id}')
+    print(f'{bot.user.name} has connected to Discord in Guild: {guild.name} GID: {guild.id}')
 
     members = '\n - '.join([member.display_name for member in guild.members])
     print(f'Guild Members: \n - {members}')
 
-@client.event
-async def on_message(message):
-    if message.author == client.user:
-        return
-    
-    help_text = ''.join(('```Command list \n',
-                        '-----------------------------\n',
-                        '!test - Extremely useful```'))
-
+@bot.command(name='test', help='Gzuu bot will give you a very thoughtful response.')
+async def test_command(ctx):
     replies = ['Huh?',
                 'I\'m going to need you to speak louder!',
                 'Oh. Yeah I have no idea how to read.'
     ]
 
-    if message.content == '!help':
-        await message.channel.send(help_text)
-    elif message.content == '!test':
-        response = random.choice(replies)
-        await message.channel.send(response)
-    elif message.content == '!raise-exception':
-        raise discord.DiscordException
+    response = random.choice(replies)
+    await ctx.send(response)
 
-@client.event
+@bot.command(name='roll', help='Roll some dice! !roll number_of_dice sides')
+async def dice_roll(ctx, number: int, sides: int):
+    if number > 100:
+        await ctx.send('Look, I like you, but I am not rolling more than 100 fucking dice.')
+        return   
+    if sides > 1000:
+        await ctx.send(f'*stares at {sides} sided dice in extreme confusion*')
+        await ctx.send('The most sides I can handle is 1000.')
+        return
+
+    dice = [
+        str(random.choice(range(1, sides + 1)))
+        for _ in range(number)
+    ]
+    total = 0
+
+    for roll in dice:
+        total += int(roll)
+
+    result = 'Roll that shit!\n' + ', '.join(dice) + '\nTotal: ' + str(total)
+    await ctx.send(result)
+
+@bot.event
 async def on_error(event, *args, **kwargs):
     now = datetime.now()
     with open('error.log', 'a') as f:
         if event == 'on_message':
             f.write(f'<{now}> Unhandled message: {args[0]}\n')
         else:
-            raise
+            raise # type: ignore
 
-
-client.run(TOKEN)
+bot.run(TOKEN)
