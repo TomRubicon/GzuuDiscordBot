@@ -97,7 +97,7 @@ async def poll(ctx, subcommand: str, arg = ''):
             poll_owner = ctx.author.name
             poll_nick = ctx.author.display_name
             poll_channel = ctx.channel
-            await ctx.send(f'A new poll named "**{poll_topic}**" has been created by **{poll_nick}({poll_owner})** for the channel: **{poll_channel}**\n The creator of the poll can end it with **"!poll end"**!')
+            await ctx.send(f'A new poll named "**{poll_topic}**" has been created by **{poll_nick}({poll_owner})** for the channel: **{poll_channel}**\nTo add choices to vote on **"!poll choice "your choice here""**\nThe creator of the poll can end it with **"!poll end"**!\nUse **"!poll status"** to see voting options. Vote by typing **"!poll vote option_number"**')
         else:
             await ctx.send(f'A poll is already active, started by **{poll_nick}**!\nTopic is: "**{poll_topic}**"')
 
@@ -108,7 +108,7 @@ async def poll(ctx, subcommand: str, arg = ''):
                 poll_votes.append(0)
                 await ctx.send(f'Added poll option: "**{arg}**"')
             else:
-                await ctx.send(f'You are no the author of this poll! Only **{poll_nick}({poll_owner})** can add choices!')
+                await ctx.send(f'You are not the author of this poll! Only **{poll_nick}({poll_owner})** can add choices!')
         else:
             await ctx.send(no_poll)
 
@@ -143,6 +143,29 @@ async def poll(ctx, subcommand: str, arg = ''):
                     poll_votes[arg - 1] += 1
                     poll_voters.append(ctx.author.name)
                     await ctx.send(f'{ctx.author.display_name} just voted for "{poll_choices[arg - 1]}"')            
+        else:
+            await ctx.send(no_poll)
+
+    elif subcommand == 'end':
+        if poll_active:
+            if ctx.author.name == poll_owner:
+                poll_dict = dict(zip(poll_choices, poll_votes))
+                poll_dict = sorted(poll_dict.items(), key=lambda x: x[1], reverse=True)
+            
+                results = f'**--The results for the poll "{poll_topic}" are in!--**\n\nThe winner is: '
+                
+                for k, v in poll_dict:
+                    results += f'**{k}** - Votes: **{v}**\n'
+
+                results += "\nThe following users voted on this poll: \n"
+
+                for u in poll_voters:
+                    results += f'-{u}'
+
+                clear_poll()
+                await ctx.send(results)
+            else:
+                await ctx.send(f'You are not the author of this poll! Only **{poll_nick}({poll_owner})** can end the poll!')
         else:
             await ctx.send(no_poll)
 
