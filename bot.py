@@ -7,6 +7,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+import youtube_dl
 import asyncio
 
 load_dotenv(verbose=True)
@@ -15,9 +16,10 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD = os.getenv('DISCORD_GUILD')
 
 intents = discord.Intents.all()
+client = discord.Client(intents=intents)
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-#global vars
+#global vars for poll command
 poll_active = False
 poll_owner = ''
 poll_nick = ''
@@ -38,6 +40,45 @@ def clear_poll():
     poll_voters = []
     poll_channel = ''
 
+#Youtube DL set up
+youtube_dl.utils.bug_reports_message = lambda: ''
+
+ytdl_format_options = {
+    'format' : 'bestaudio/best',
+    'restrictfilenames': True,
+    'noplaylist': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'auto',
+    'source_address': '0.0.0.0' # bind to ipv4 since ipv6 addresses cause issues sometimes
+}
+
+ffmpeg_options = {
+    'options': '-vn'
+}
+ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
+
+class YTDLSource(discord.PCMVolumeTransformer):
+    def __init__(self, source, *, data, volume=0.5):
+        super().__init__(source, volume)
+        self.data = data
+        self.title = data.get('title')
+        self.url = ""
+    
+    @classmethod
+    async def from_url(cls, url, *, loop=None, stream=False):
+        loop = loop or asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+        if 'entries' in data:
+            # take first item from a playlist
+            data = data['entries'][0]
+        filename = data['title'] if stream else ytdl.prepare_filename(data)
+        return filename
+
+#Start him up!
 @bot.event
 async def on_ready():
     guild = discord.utils.get(bot.guilds, name=GUILD)
@@ -47,6 +88,7 @@ async def on_ready():
     members = '\n - '.join([member.display_name for member in guild.members])
     print(f'Guild Members: \n - {members}')
 
+#Just a fun little test command
 @bot.command(name='test', help='Gzuu bot will give you a very thoughtful response.')
 async def test_command(ctx):
     replies = ['Huh?',
@@ -57,6 +99,7 @@ async def test_command(ctx):
     response = random.choice(replies)
     await ctx.send(response)
 
+#Dice roll!
 @bot.command(name='roll', help='Roll some dice! !roll number_of_dice sides')
 async def dice_roll(ctx, number: int, sides: int):
     if number > 100:
@@ -83,7 +126,7 @@ async def start_poll():
 
     return
 
-#Likely a terrible way to do this but lets gooooooo
+#Poll system commands. Likely a terrible way to do this but lets gooooooo
 @bot.command(name='poll', help='Start a new poll for the server to vote on')
 async def poll(ctx, subcommand: str, arg = ''):
     global poll_active, poll_owner, poll_nick, poll_topic, poll_choices, poll_votes, poll_voters, poll_channel
@@ -177,6 +220,64 @@ async def poll(ctx, subcommand: str, arg = ''):
         else:
             await ctx.send('Only admins can clear polls!')
 
+#Youtube music player commands
+@bot.command(name='join', help='Makes Gzuu join the voice channel you are currently active in')
+async def join(ctx):
+    if not ctx.message.author.voice:
+        await ctx.send(f'{ctx.message.author.name} is not connected to a voice channel!')
+        return
+    else:
+        channel = ctx.message.author.voice.channel
+    await channel.connect()
+
+@bot.command(name='leave', help='Make Gzuu leave current voice channel')
+async def leave(ctx):
+    voice_client = ctx.message.guild.voice_client
+    if voice_client.is_connected():
+        await voice_client.disconnect()
+    else:
+        await ctx.send('I\'m not in a voice channel!')
+
+@bot.command(name='play', help='If Gzuu is connected to a voice channel play a youtube audio in that channel')
+async def play(ctx, url):
+    try:
+        server = ctx.message.guild
+        voice_channel = server.voice_client
+
+        async with ctx.typing():
+            filename = await YTDLSource.from_url(url, loop=bot.loop)
+
+        voice_channel.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename))
+
+        await ctx.send(f'**NOW PLAYING:** {filename}')
+    except:
+        await ctx.send('I\'m not connected to a voice channel!')
+
+@bot.command(name='pause', help='Pauses the current song')
+async def pause(ctx):
+    voice_client = ctx.message.guild.voice_client
+    if voice_client.is_playing():
+        await voice_client.pause()
+    else:
+        await ctx.send('I\'m not currently playing a song!')
+
+@bot.command(name='resume', help='Resume playing current song')
+async def resume(ctx):
+    voice_client = ctx.message.guild.voice_client
+    if voice_client.is_paused():
+        await voice_client.resume()
+    else:
+        await ctx.send('I\'m not currently playing a song!')
+
+@bot.command(name='stop', help='Stops playing the current song')
+async def stop(ctx):
+    voice_client = ctx.message.guild.voice_client
+    if voice_client.is_playing():
+        await voice_client.stop()
+    else:
+        await ctx.send('I\'m not currently playinga  song!')
+
+#Error handling events
 @bot.event
 async def on_error(event, *args, **kwargs):
     now = datetime.now()
