@@ -17,7 +17,6 @@ intents = discord.Intents.all()
 client = discord.Client(intents=intents)
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-
 #poll class
 class Poll:
     def clear(self):
@@ -34,7 +33,7 @@ class Poll:
     def __init__(self):
         self.clear()
 
-poll = Poll()
+poll = {}
 
 #Youtube DL set up
 youtube_dl.utils.bug_reports_message = lambda: ''
@@ -77,9 +76,15 @@ class YTDLSource(discord.PCMVolumeTransformer):
 #Start him up!
 @bot.event
 async def on_ready():
+    global poll
+
     guild = discord.utils.get(bot.guilds, name=GUILD)
     
     print(f'{bot.user.name} has connected to Discord in Guild: {guild.name} GID: {guild.id}')
+
+    for member in guild.members:
+        poll[member.name] = Poll()
+        print(f'Poll object created for {member.name}')
 
     members = '\n - '.join([member.display_name for member in guild.members])
     print(f'Guild Members: \n - {members}')
@@ -124,99 +129,124 @@ async def start_poll():
 
 #Poll system commands. Likely a terrible way to do this but lets gooooooo
 @bot.command(name='poll', help='Start a new poll for the server to vote on')
-async def poll_(ctx, subcommand: str, arg = ''):
-    no_poll = 'There is no active poll!'
+async def poll_(ctx, subcommand: str, *args):
+    global poll
+    user = ctx.author.name
+    nick = ctx.author.display_name
+    no_poll = 'You have not started a poll!'
+    response = ''
 
     if subcommand == 'topic':
-        if not poll.active:
-            poll.active = True
-            poll.topic = arg
-            print(f'New poll named {poll.topic}')
-            poll.owner = ctx.author.name
-            poll.nick = ctx.author.display_name
-            poll.channel = ctx.channel
-            await ctx.send(f'A new poll named "**{poll.topic}**" has been created by **{poll.nick}({poll.owner})** for the channel: **{poll.channel}**\nTo add choices to vote on **"!poll choice "your choice here""**\nThe creator of the poll can end it with **"!poll end"**!\nUse **"!poll status"** to see voting options. Vote by typing **"!poll vote option_number"**')
+        if not poll[user].active:
+            poll[user].active = True
+            poll[user].topic = args[0]
+            print(f'New poll named {poll[user].topic} created by {user}')
+            poll[user].owner = user
+            poll[user].nick = nick
+            poll[user].channel = ctx.channel
+            
+            response += f'A new poll named **{poll[user].topic}**' 
+            response += f' has been created by **{poll[user].nick}({poll[user].owner})**'
+            response += f'for the channel: **{poll[user].channel}**\n'
+            response += f'To add choices to vote on: `!poll choice "your choice here"`\n'
+            response += f'To end the poll: `!poll end`\nSee options and current votes: `!poll status`\n'
+            response += f'To vote: `!poll vote {poll[user].owner} choice_number`'
+
+            await ctx.send(response)
         else:
-            await ctx.send(f'A poll is already active, started by **{poll.nick}**!\nTopic is: "**{poll.topic}**"')
+            await ctx.send(f'You are already running a poll!')
 
     elif subcommand == 'choice':
-        if poll.active:
-            if ctx.author.name == poll.owner:
-                poll.choices.append(arg)
-                poll.votes.append(0)
-                await ctx.send(f'Added poll choice: "**{arg}**"')
-            else:
-                await ctx.send(f'You are not the author of this poll! Only **{poll.nick}({poll.owner})** can add choices!')
+        if poll[user].active:
+            poll[user].choices.append(args[0])
+            poll[user].votes.append(0)
+            await ctx.send(f'Added poll choice: "**{args[0]}**"')
         else:
             await ctx.send(no_poll)
-
+    
     elif subcommand == 'status':
-        if poll.active:
-            response = f'Poll topic: "{poll.topic}"\n- Choices: ```'
-            if len(poll.choices) > 0:
-                for choice in poll.choices:
-                    position = poll.choices.index(choice) + 1
-                    votes = poll.votes[poll.choices.index(choice)]
+        if poll[user].active:
+            response = f'Poll topic: "{poll[user].topic}"\n- Choices: ```'
+            if len(poll[user].choices) > 0:
+                for choice in poll[user].choices:
+                    position = poll[user].choices.index(choice) + 1
+                    votes = poll[user].votes[poll[user].choices.index(choice)]
                     response += f'-- {position}: {choice} - Votes: {votes}\n'
             else:
-                response += 'There are no poll choices yet!\nIf you are the poll author, add some with !poll choice "Your choice here"'
+                response += 'There are no poll choices yet!\nAdd some with !poll choice "Your choice here"'
             response += '```'
+            response += f'To vote: `!poll vote {poll[user].owner} choice_number`'
             await ctx.send(response)
         else:
             await ctx.send(no_poll)
     
     elif subcommand == 'vote':
-        if poll.active:
-            if ctx.author.name in poll.voters:
+        if args[0] not in poll:
+            await ctx.send(f'User {args[0]} does not exist')
+            return
+        
+        p = args[0]
+
+        if poll[p].active:
+            if user in poll[p].voters:
                 await ctx.send('You already voted! Settle down.')
                 return
             else:
-                arg = int(arg)
+                arg = int(args[1])
                 try:
                     int(arg)
                 except ValueError:
                     await ctx.send('Choice must be a number!')
                     return
                 
-                if arg == 0 or arg > len(poll.choices):
+                if arg == 0 or arg > len(poll[p].choices):
                     await ctx.send('Please vote for a valid choice number!')
                 else:
-                    poll.votes[arg - 1] += 1
-                    poll.voters.append(ctx.author.name)
-                    await ctx.send(f'{ctx.author.display_name} just voted for "{poll.choices[arg - 1]}"')            
+                    poll[p].votes[arg - 1] += 1
+                    poll[p].voters.append(ctx.author.name)
+                    await ctx.send(f'{ctx.author.display_name} just voted for "{poll[p].choices[arg - 1]}"')            
         else:
-            await ctx.send(no_poll)
+            await ctx.send('This user has not started a poll!')
 
     elif subcommand == 'end':
-        if poll.active:
-            if ctx.author.name == poll.owner:
-                poll_dict = dict(zip(poll.choices, poll.votes))
-                poll_dict = sorted(poll_dict.items(), key=lambda x: x[1], reverse=True)
+        if poll[user].active:
+            poll_dict = dict(zip(poll[user].choices, poll[user].votes))
+            poll_dict = sorted(poll_dict.items(), key=lambda x: x[1], reverse=True)
+        
+            results = f'**--The results for the poll "{poll[user].topic}" are in!--**\n\nThe winner is: '
             
-                results = f'**--The results for the poll "{poll.topic}" are in!--**\n\nThe winner is: '
-                
-                for k, v in poll_dict:
-                    results += f'**{k}** - Votes: **{v}**\n'
+            for k, v in poll_dict:
+                results += f'**{k}** - Votes: **{v}**\n'
 
-                results += "\nThe following users voted on this poll: \n"
+            results += "\nThe following users voted on this poll: \n"
 
-                for u in poll.voters:
-                    results += f'-{u}'
+            for u in poll[user].voters:
+                results += f'-{u}'
 
-                poll.clear()
-                await ctx.send(results)
-            else:
-                await ctx.send(f'You are not the author of this poll! Only **{poll.nick}({poll.owner})** can end the poll!')
+            poll[user].clear()
+            await ctx.send(results)
         else:
             await ctx.send(no_poll)
+    
+    elif subcommand == 'list':
+        for p in poll:
+            if poll[p].active:
+                response += f'**{poll[p].topic}** by **{poll[p].owner}**\n'
+                if len(poll[p].choices) > 0:
+                    for choice in poll[p].choices:
+                        position = poll[p].choices.index(choice) + 1
+                        votes = poll[p].votes[poll[p].choices.index(choice)]
+                        response += f'-- {position}: {choice} - Votes: {votes}\n'
+                    response += f'To vote: `!poll vote {poll[p].owner} choice_number`'
+                else:
+                    response += '*No choices for this poll*\n'
+                response += '\n'
 
-    elif subcommand == 'clear':
-        role = discord.utils.find(lambda r: r.name == '@Admin', ctx.guild.roles)
-        if role in ctx.author.roles:
-            poll.clear()
-            await ctx.send('Clearing poll!')
-        else:
-            await ctx.send('Only admins can clear polls!')
+        if response == '':
+            response = 'No polls are active!'
+        await ctx.send(response)
+                
+
 
 #Youtube music player commands
 @bot.command(name='join', help='Makes Gzuu join the voice channel you are currently active in')
