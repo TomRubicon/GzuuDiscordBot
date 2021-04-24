@@ -71,7 +71,12 @@ class YTDLSource(discord.PCMVolumeTransformer):
             # take first item from a playlist
             data = data['entries'][0]
         filename = data['title'] if stream else ytdl.prepare_filename(data)
-        return filename
+        length = data['duration']
+        return filename, length
+
+#Globals for song queues
+queue = []
+is_playing = False;
 
 #Start him up!
 @bot.event
@@ -246,8 +251,6 @@ async def poll_(ctx, subcommand: str, *args):
             response = 'No polls are active!'
         await ctx.send(response)
                 
-
-
 #Youtube music player commands
 @bot.command(name='join', help='Makes Gzuu join the voice channel you are currently active in')
 async def join(ctx):
@@ -261,30 +264,41 @@ async def join(ctx):
 @bot.command(name='leave', help='Make Gzuu leave current voice channel')
 async def leave(ctx):
     voice_client = ctx.message.guild.voice_client
-    if voice_client.is_connected():
+    if voice_client and voice_client.is_connected():
         await voice_client.disconnect()
     else:
         await ctx.send('I\'m not in a voice channel!')
+
+# @bot.command(name='queue', help='Lists the songs currently in queue')
+# async def queue(ctx):
+#     pass
+
+
 
 @bot.command(name='play', help='If Gzuu is connected to a voice channel play a youtube audio in that channel')
 async def play(ctx, url):
     try:
         server = ctx.message.guild
         voice_channel = server.voice_client
+        voice_client = ctx.message.guild.voice_client
 
-        async with ctx.typing():
-            filename = await YTDLSource.from_url(url, loop=bot.loop)
+        if voice_client and voice_client.is_playing():
+            await ctx.send('I am already playing a song! use !stop to end the current song.')
+        else:
+            async with ctx.typing():
+                filename, length = await YTDLSource.from_url(url, loop=bot.loop)
+            print(filename)
+            print(length)
+            voice_channel.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename))
+            await ctx.send(f'**NOW PLAYING:** {filename}')
 
-        voice_channel.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename))
-
-        await ctx.send(f'**NOW PLAYING:** {filename}')
     except:
         await ctx.send('I\'m not connected to a voice channel!')
 
 @bot.command(name='pause', help='Pauses the current song')
 async def pause(ctx):
     voice_client = ctx.message.guild.voice_client
-    if voice_client.is_playing():
+    if voice_client and voice_client.is_playing():
         await voice_client.pause()
     else:
         await ctx.send('I\'m not currently playing a song!')
@@ -292,7 +306,7 @@ async def pause(ctx):
 @bot.command(name='resume', help='Resume playing current song')
 async def resume(ctx):
     voice_client = ctx.message.guild.voice_client
-    if voice_client.is_paused():
+    if voice_client and voice_client.is_paused():
         await voice_client.resume()
     else:
         await ctx.send('I\'m not currently playing a song!')
@@ -300,7 +314,7 @@ async def resume(ctx):
 @bot.command(name='stop', help='Stops playing the current song')
 async def stop(ctx):
     voice_client = ctx.message.guild.voice_client
-    if voice_client.is_playing():
+    if voice_client and voice_client.is_playing():
         await voice_client.stop()
     else:
         await ctx.send('I\'m not currently playinga  song!')
